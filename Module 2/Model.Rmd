@@ -1,0 +1,123 @@
+---
+title: "Model"
+author: "Yutong Zhang"
+date: "10/12/2022"
+output: pdf_document
+---
+
+```{r}
+library(car)
+library(caret)
+library(tidyverse)
+data <- read.csv("/Users/seola/Desktop/Module2/BodyFat_cleaned.txt", header=TRUE)
+```
+
+
+
+
+Correlation model
+```{r}
+cor(data$BODYFAT, data[,2:14])
+
+model_COR_1 = lm(BODYFAT ~ ABDOMEN + HIP + THIGH + KNEE + BICEPS, data = data)
+
+model_COR_2 = lm(BODYFAT ~ ABDOMEN + HIP + THIGH + KNEE, data = data) #Best #Adjusted R-squared: 0.6656
+
+model_COR_3 = lm(BODYFAT ~ ABDOMEN + HIP + THIGH, data = data)
+
+model_COR_4 = lm(BODYFAT ~ ABDOMEN + HIP, data = data)
+
+summary(model_COR_1)
+summary(model_COR_2)
+summary(model_COR_3)
+summary(model_COR_4)
+
+# multicollinearity
+vif(model_COR_2) 
+```
+
+DecisionTree Model
+```{r}
+model_DT_1 = lm(BODYFAT ~ ABDOMEN + HEIGHT + BICEPS + THIGH, data = data)
+
+model_DT_2 = lm(BODYFAT ~ ABDOMEN + HEIGHT + BICEPS, data = data)
+
+model_DT_3 = lm(BODYFAT ~ ABDOMEN + HEIGHT + THIGH, data = data)
+
+model_DT_4 = lm(BODYFAT ~ ABDOMEN + HEIGHT, data = data) # Adjusted R-squared:  0.6773 
+
+summary(model_DT_1)
+summary(model_DT_2)
+summary(model_DT_3)
+summary(model_DT_4)
+
+vif(model_DT_1) 
+vif(model_DT_2)
+vif(model_DT_3)
+vif(model_DT_4)
+```
+
+Stepwise Model
+```{r}
+M0 <- lm(BODYFAT ~ 1, data = data) # null model
+M1 <- lm(BODYFAT ~ ., data = data) # full model
+
+# backward with AIC and BIC 
+model_AIC <- step(lm(M1, data = data), k=2, direction = "backward", trace=0) #Adjusted R-squared:  0.7068
+model_BIC <- step(lm(M1, data = data), k=log(dim(data)[1]),  direction = "backward", trace=0) #Adjusted R-squared:  0.6972
+
+#model_forward <- step(M0, direction='forward', scope=formula(M1), trace=0) #Adjusted R-squared:  0.7031
+
+
+summary(model_AIC)
+summary(model_BIC)
+#summary(model_forward)
+
+vif(model_AIC) 
+vif(model_BIC)
+#vif(model_forward) 
+```
+
+The backward method is generally the preferred method, because the forward method produces so-called suppressor effects. These suppressor effects occur when predictors are only significant when another predictor is held constant.
+
+AIC is best for prediction as it is asymptotically equivalent to cross-validation.
+BIC is best for explanation as it is allows consistent estimation of the underlying data generating process.
+
+
+
+```{r}
+predictions_COR <- model_COR_2 %>% predict(data)
+predictions_DT <- model_DT_4 %>% predict(data)
+predictions_AIC <- model_AIC %>% predict(data)
+predictions_BIC <- model_BIC %>% predict(data)
+
+data.frame(Model = c('model_COR_2', 'model_DT_4', 'model_AIC', 'model_BIC'),
+  'Adj R2' = c(0.6656, 0.6773, 0.7068, 0.6972),
+  RMSE = c(RMSE(predictions_COR, data$BODYFAT), RMSE(predictions_DT, data$BODYFAT), RMSE(predictions_AIC, data$BODYFAT), RMSE(predictions_BIC, data$BODYFAT)),
+  MAE = c(MAE(predictions_COR, data$BODYFAT), MAE(predictions_DT, data$BODYFAT), MAE(predictions_AIC, data$BODYFAT), MAE(predictions_BIC, data$BODYFAT))
+)
+```
+
+
+
+```{r}
+# Check the homoskedasticity and linearity
+plot(predict(model_BIC),resid(model_BIC),pch=19,cex=1.2,cex.lab=1.5,cex.main=1.5,
+    xlab="Predicted Body Fat %", ylab="Standardized Residuals",main="Standardized Residual Plot")
+abline(a=0,b=0,col="black",lwd=3)
+```
+
+```{r}
+# Check normality 
+qqnorm(rstandard(model_BIC),pch=19,cex=1.2,cex.lab=1.5,cex.main=1.5,
+      main="Normal Q-Q Plot")
+abline(a=0,b=1,col="black",lwd=3)
+```
+
+```{r}
+#Application of the model
+
+#95% predict interval
+predict(model_BIC, newdata = data.frame(HEIGHT = 175, ABDOMEN = 90, WRIST = 18), interval="predict")
+#For a person with height measurement 175cm, abdomen measurement 90cm and wrist measurement 18cm, his predicted body fat % percentage would be around 18.04%. There is a 95% probability that his body fat is between 9.81% and 26.27%
+
