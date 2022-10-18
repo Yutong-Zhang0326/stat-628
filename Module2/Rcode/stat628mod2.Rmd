@@ -1,0 +1,264 @@
+---
+title: "Measure bodyfat somehow accurately?"
+output: "html_document"
+---
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(MASS)
+library(regclass) #for detecting Multicollinearity
+library(stats)
+library(factoextra)
+library(cluster)
+```
+
+```{r}
+bodyfat = read.csv("C:/Users/paul_/Documents/stat628mod2/module2/data/BodyFat.csv")
+```
+
+# Data Clean and imputation
+
+## Since the body fat is calculated from siri's equation, we would first like to check if there is any computation error, and then select those abnormal data points for later analysis.
+
+$$Body Fat = \frac{495}{Body Density} - 450$$
+
+```{r}
+bodyfat$cal_bodyfat = 495/bodyfat$DENSITY - 450
+```
+
+```{r}
+ggplot(bodyfat)+
+  geom_point(aes(x = DENSITY, y = cal_bodyfat),color = "blue")+
+  geom_point(aes(x = DENSITY, y = BODYFAT, label = IDNO),color = "orange")+
+  geom_text(aes(x = DENSITY, y = BODYFAT,label=ifelse(abs(BODYFAT-cal_bodyfat) > 4,as.character(IDNO),""),hjust=-0.2,vjust=1))+
+  #scale_colour_hue(labels=c("data calculated from Siri's equation","sample data"))+
+  labs(
+    x="Body Density",
+    y="Body Fat"
+  )
+```
+
+Based on our criteria of large deviation, there are 3 data points that seems to abnormal.
+
+```{r}
+abnormal <- bodyfat%>%
+  filter(abs(BODYFAT-cal_bodyfat) > 4)
+abnormal
+```
+
+## We would like to substitute them with results of body fat from a observational study based on a large population of the united states.
+
+```{r}
+#Calculate bmi for abnormal data point and use some findings in a research paper to impute
+bmi <- abnormal$WEIGHT * 0.4536 /((abnormal$HEIGHT * 0.0254)^2)
+bmi
+```
+```{r}
+bodyfat[c(48,76,96),"BODYFAT"] = c(21,25.8,28)-0.2 #0.2 is the standard deviation from that study.
+```
+
+# A little EDA(exploratory data analysis)
+
+## Relationship between abdomen and body fat.
+### Reason why we would like to expolre it: Abdominal, or visceral, fat is of particular concern because it's a key player in a variety of health problems, and healthy people tend to have lower body fat. Thus, a person with lower value of abdomen circumstance will probabily have lower body fat.
+
+```{r}
+ggplot(bodyfat,aes(x = ABDOMEN, y = BODYFAT))+
+  geom_point()+
+  geom_smooth(method = "lm",se = TRUE)+
+  labs(
+    x="Abdomen Circumstance(cm)",
+    y="Body Fat(%)"
+  )
+```
+## Age and body fat
+###From the article we can also get to know as people go through their middle years, their proportion of fat to body weight tends to increase. Many other research that envolves human health and disease will divided people to different group, we would like to do the same and intuitively we think the one year change of people's age will not be reflected hugely on the body fat if age does have impact on it. A general way is to devided them as young, middled aged and old adults.
+
+```{r}
+bodyfat$type1 <- factor(
+  ifelse(bodyfat$AGE <= 35, 'young adults',
+                     ifelse(bodyfat$AGE <= 55, 'middle aged adults', 
+                     ifelse(bodyfat$AGE <100, 'old adults'))), levels = c('young adults','middle aged adults','old adults'))
+
+ggplot(data = bodyfat, mapping = aes(x = ABDOMEN, y = BODYFAT, color = type1))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(.~type1)+
+  geom_smooth(method = "lm", span = 0.8)
+```
+The boxplot shows an increasing trend of body fat over age. And the linear model smooth line shows that the trend between abdomen and body fat  within each group is similar.
+
+## The correlation 
+### We would like to verify that our intuitive guess is true.
+
+
+```{r}
+correlation = data.frame(cor(bodyfat[,c(-1,-2,-18,-19)],bodyfat$BODYFAT))
+```
+
+
+```{r warning=FALSE}
+ggplot(correlation)+
+  geom_point(aes(x = reorder(row.names(correlation),correlation$cor.bodyfat...c..1...2...18...19....bodyfat.BODYFAT.), y = correlation$cor.bodyfat...c..1...2...18...19....bodyfat.BODYFAT.))+
+  labs(
+    title = "Correlation",
+    x = "Features",
+    y = "Body Fat"
+  )+
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+Abdomen does have the highest correlation with body fat.
+
+# Model Comparison
+
+## With one variate Abdomen
+```{r}
+model0 <-lm(BODYFAT ~ ABDOMEN, data = bodyfat)
+summary(model0)
+```
+
+
+## Add age as categorical variable
+```{r}
+model1 <- lm(BODYFAT ~ ABDOMEN + type1, data = bodyfat)
+summary(model1)
+anova(model1) # want to see the obvious difference between different age groups
+```
+
+## Another method of grouping age (Mesh)
+```{r}
+bodyfat$type2 <- factor(
+  ifelse(bodyfat$AGE <= 44, '1',
+                     ifelse(bodyfat$AGE <= 64, '2', 
+                     ifelse(bodyfat$AGE <100, '3'))), levels = c('1','2','3'))
+
+ggplot(data = bodyfat, mapping = aes(x = ABDOMEN, y = BODYFAT, color = type2))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(.~type2)+
+  geom_smooth(method = "lm", span = 0.8)  #改标签
+```
+Same trend as the first method of grouping age.
+
+```{r}
+model2 <- lm(BODYFAT ~ ABDOMEN + type2, data = bodyfat)
+summary(model2)
+anova(model2)
+```
+
+
+## based on another which focus on the relationship between age and bodyfat: by decade for descriptive purpose?
+
+```{r}
+bodyfat$type3 <- factor(
+  ifelse(bodyfat$AGE <= 39, '1',
+                     ifelse(bodyfat$AGE <= 59, '2', 
+                     ifelse(bodyfat$AGE <= 81, '3'))))
+ggplot(data = bodyfat, mapping = aes(x = ABDOMEN, y = BODYFAT, color = type3))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(.~type3)+
+  geom_smooth(method = "lm", span = 0.8)  #改标签
+```
+```{r}
+model3 <- lm(BODYFAT ~ ABDOMEN + type3, data = bodyfat)
+summary(model3)
+anova(model3)
+```
+
+
+
+
+
+   #curvlinear in age? have trend in age? 
+
+```{r}
+fviz_nbclust(bodyfat[,c(7,4)], kmeans, method = "wss")
+gap_stat <- clusGap(bodyfat[,c(7,4)],
+                    FUN = kmeans,
+                    nstart = 25,
+                    K.max = 10,
+                    B = 50)
+
+#plot number of clusters vs. gap statistic
+fviz_gap_stat(gap_stat)
+```
+
+devided into 4 groups
+
+```{r}
+km <- kmeans(bodyfat[,c(7,4)], centers = 4, nstart = 25)
+km
+```
+
+
+```{r}
+fviz_cluster(km, data = bodyfat[,c(4,2)])
+```
+
+```{r}
+bodyfat$type4 = factor(km$cluster, levels = c("3","4","1","2"))
+```
+
+```{r}
+bodyfat%>%
+  group_by(type4)%>%
+  count() #the sample size of last group is relatively small compared to others
+```
+
+```{r}
+ggplot(data = bodyfat, mapping = aes(x = ABDOMEN, y = BODYFAT, color = type4))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(.~type4)+
+  geom_smooth(method = "lm", span = 0.8)
+
+bodyfat[,c("AGE","type4")] %>%
+  group_by(type4) %>%
+  dplyr::summarize(Max = max(AGE), Min = min(AGE))
+```
+
+
+
+```{r}
+model4 <- lm(BODYFAT ~ ABDOMEN  + type4, data = bodyfat)
+summary(model4)
+anova(model4)
+```
+## combine the last two groups in k means method
+
+```{r}
+bodyfat$type5 <- factor(
+  ifelse(bodyfat$AGE <= 34, '1',
+                     ifelse(bodyfat$AGE <= 46, '2', 
+                     ifelse(bodyfat$AGE <= 81, '3'))))
+ggplot(data = bodyfat, mapping = aes(x = ABDOMEN, y = BODYFAT, color = type5))+
+  geom_point()+
+  geom_boxplot()+
+  facet_grid(.~type5)+
+  geom_smooth(method = "lm", span = 0.8)  #改标签
+```
+
+```{r}
+model5 <- lm(BODYFAT ~ ABDOMEN  + type5, data = bodyfat)
+summary(model5)
+anova(model5)
+```
+
+Based on R-squared, the grouping method 3 based on a research.. is the best
+
+#Model Diagnosis
+
+```{r}
+plot(model3)
+```
+
+
+
+
+
+
