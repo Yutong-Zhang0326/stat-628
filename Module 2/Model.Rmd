@@ -121,7 +121,3 @@ abline(a=0,b=1,col="black",lwd=3)
 predict(model_BIC, newdata = data.frame(HEIGHT = 175, ABDOMEN = 90, WRIST = 18), interval="predict")
 #For a person with height measurement 175cm, abdomen measurement 90cm and wrist measurement 18cm, his predicted body fat % percentage would be around 18.04%. There is a 95% probability that his body fat is between 9.81% and 26.27%
 
-#95% confidence interval
-confint(model_BIC)
-#We are 95% confident that the interval ???? contains the true slope value
-```
