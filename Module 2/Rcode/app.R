@@ -1,38 +1,31 @@
-
 library(shiny)
-library(tidyverse)
-olympics <- read_csv("https://uwmadison.box.com/shared/static/rzw8h2x6dp5693gdbpgxaf2koqijo12l.csv")
 
-#' Scatterplot with highlighted points
-#' 
-#' Assumes a column in df called "selected" saying whether points should be
-#' larger / darker
-scatterplot <- function(df) {
-  ggplot(df) +
-    geom_point(
-      aes(Weight, `Height, cm`, 
-          col = as.factor(selected),
-      )) +
-    scale_color_manual(values = c("black", "red"))
-}
+
+
 
 ui <- fluidPage(
-  selectInput("dropdown", "Select a Sport", choices = unique(olympics$Sport), multiple = TRUE),
-  plotOutput("scatterplot"),
-  dataTableOutput("table")
-)
+  titlePanel("Simple Body Fat Calculator"),
+  sidebarLayout(
+    mainPanel(
+      h5("This is a simple and easy calculator for bodyfat. 
+        You just need to enter your abdomen circumstance and your age to get the result!"),
+      numericInput("ab", "Abdomen circumstance(cm)", 85.36), #the default is Phelps' data
+      selectInput("age_range", "Select the your age range",
+                  choices = c("22-39","40-59","60+"))
+    ),
+    mainPanel(
+      h2("The result is:"),
+      textOutput("output")
+    )))
+server <- function(input, output){
+  output$output <- renderText({
+    switch(input$age_range,
+           "22-39" = input$ab * 0.55587 -33.64708 ,
+           "40-59" = input$ab * 0.55587 + 1.39555 -33.64708,
+           "60+" = input$ab * 0.55587 + 3.38473 -33.64708)
     
-server <- function(input, output) {
-  updated <- reactive({
-    olympics %>%
-      mutate(selected = Sport %in% input$dropdown)
   })
   
-  output$scatterplot <- renderPlot(scatterplot(updated()))
-  output$table <- renderDataTable({
-    updated() %>%
-      filter(selected)
-  })
 }
-
-shinyApp(ui, server)
+app <- shinyApp(ui, server)
+app
